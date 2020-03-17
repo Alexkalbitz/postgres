@@ -104,6 +104,24 @@ DELETE FROM "user" WHERE "email" = 'pascal.ludwig@mantro.net';
 -- Foreign key violation on drop table
 DROP TABLE "user";
 
+-- Cascading Foreign Key Constraint (DELETE)
+ALTER TABLE "address"
+    ADD CONSTRAINT "fk_address_user" FOREIGN KEY ("user_id")
+    REFERENCES "user" ("id") ON DELETE CASCADE;
+
+SELECT * FROM "address";
+DELETE FROM "user" WHERE "id" = 1;
+SELECT * FROM "address";
+
+-- Cascading Foreign Key Constraint (UPDATE)
+ALTER TABLE "address"
+    ADD CONSTRAINT "fk_address_user" FOREIGN KEY ("user_id")
+    REFERENCES "user" ("id") ON UPDATE CASCADE;
+
+SELECT * FROM "address";
+UPDATE "user" SET "id" = 123 WHERE "id" = 1;
+SELECT * FROM "address";
+
 -- Unique Index
 CREATE UNIQUE INDEX "uq_user_email" ON "user" (TRIM(LOWER("email")));
 
@@ -191,3 +209,62 @@ WHERE "title" ILIKE '%karate%';
 EXPLAIN ANALYZE SELECT * FROM "film" ORDER BY "release_year";
 
 CREATE INDEX "idx_film_relese_year" ON "film" ("release_year");
+
+-- Stored Procedures / Functions / Routines
+CREATE FUNCTION is_film_available_in_german(
+    "_film_id" INT
+) RETURNS BOOLEAN AS $$
+DECLARE
+    "_film" RECORD;
+BEGIN
+    SELECT *
+    INTO STRICT "_film"
+    FROM "film"
+    WHERE "film_id" = "_film_id";
+
+    IF "_film"."length" > 100 THEN
+        RAISE WARNING 'Film is pretty long!';
+    END IF;
+
+    IF "_film"."length" > 130 THEN
+        RAISE EXCEPTION 'Film is too long!';
+    END IF;
+
+    RETURN "_film"."language_id" = (
+        SELECT "language_id"
+        FROM "language"
+        WHERE "name" = 'German'
+    );
+END;
+$$ LANGUAGE PLPGSQL;
+
+-- Print Warning
+SELECT "is_film_available_in_german"(5);
+
+-- Throw Error
+SELECT "is_film_available_in_german"(5);
+
+-- Triggers
+
+CREATE OR REPLACE FUNCTION "tfn_before_customer_upsert"()
+   RETURNS trigger AS $$
+BEGIN
+    NEW."email" = LOWER(TRIM(NEW."email"));
+    RETURN NEW;
+END;
+$$ LANGUAGE PLPGSQL;
+
+CREATE TRIGGER "trg_before_customer_insert"
+    BEFORE INSERT ON "customer"
+    FOR EACH ROW EXECUTE PROCEDURE "tfn_before_customer_upsert"();
+
+CREATE TRIGGER "trg_before_customer_update"
+    BEFORE UPDATE ON "customer"
+    FOR EACH ROW EXECUTE PROCEDURE "tfn_before_customer_upsert"();
+
+INSERT INTO "customer"
+    ("store_id", "first_name", "last_name", "email", "address_id", "activebool", "create_date")
+    VALUES
+    (1, 'a', 'b', 'PASCAL.LUDWIG@manTRO.NeT', 1, true, NOW());
+
+SELECT "email" FROM "customer" ORDER BY "create_date" DESC LIMIT 1;
